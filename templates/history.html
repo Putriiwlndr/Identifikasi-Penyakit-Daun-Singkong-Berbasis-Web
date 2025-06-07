@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Riwayat Prediksi</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="text-center mb-4">
+            <h2 class="fw-bold text-success">Riwayat Prediksi</h2>
+            <p class="text-muted">Data hasil prediksi yang telah dilakukan sebelumnya.</p>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped text-center">
+                <thead class="table-success">
+                    <tr>
+                        <th>#</th>
+                        <th>Nama File</th>
+                        <th>Hasil Prediksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <a href="{{ url_for('show_result', filename=row[1]) }}">
+                                {{ row[1] }}
+                            </a>
+                        </td>
+
+                        <td>{{ row[2] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="text-center mt-4">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Kembali ke Beranda</a>
+        </div>
+    </div>
+</body>
+</html>
