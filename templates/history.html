@@ -7,18 +7,33 @@
 </head>
 <body class="bg-light">
     <div class="container py-5">
+
+        <!-- Notifikasi Flash -->
         <div class="text-center mb-4">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="container mb-3">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% endwith %}
+
+            <!-- Judul Halaman -->
             <h2 class="fw-bold text-success">Riwayat Prediksi</h2>
             <p class="text-muted">Data hasil prediksi yang telah dilakukan sebelumnya.</p>
         </div>
 
+        <!-- Tabel Riwayat -->
         <div class="table-responsive">
-            <table class="table table-bordered table-striped text-center">
+            <table class="table table-bordered table-striped">
                 <thead class="table-success">
                     <tr>
                         <th>#</th>
                         <th>Nama File</th>
                         <th>Hasil Prediksi</th>
+                        <th>Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -30,17 +45,26 @@
                                 {{ row[1] }}
                             </a>
                         </td>
-
                         <td>{{ row[2] }}</td>
+                        <td>
+                            <form action="{{ url_for('delete_history') }}" method="POST" style="display:inline;">
+                                <input type="hidden" name="id" value="{{ row[0] }}">
+                                <input type="hidden" name="filename" value="{{ row[1] }}">
+                                <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
+                            </form>
+
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
 
+        <!-- Tombol Kembali -->
         <div class="text-center mt-4">
             <a href="{{ url_for('index') }}" class="btn btn-primary">Kembali ke Beranda</a>
         </div>
+
     </div>
 </body>
 </html>

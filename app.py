@@ -7,12 +7,13 @@ from io import BytesIO
 import timm
 import torch
 import torch.nn as nn
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, url_for
 from PIL import Image
 from torchvision import transforms
 
 # --- Konfigurasi Flask ---
 app = Flask(__name__)
+app.secret_key = 'cassava_leaf_disease_123456'
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -25,16 +26,11 @@ model_path = 'model/tf_efficientnet_b6.ns_jft_in1k_fold_0_best.pth'
 checkpoint = torch.load(model_path, map_location=device)
 
 # Periksa apakah checkpoint berisi state_dict langsung atau dict lengkap
-if 'state_dict' in checkpoint:
-    state_dict = checkpoint['state_dict']
-else:
-    state_dict = checkpoint
+state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
 
 # Bersihkan nama key jika mengandung 'model.'
-new_state_dict = OrderedDict()
-for k, v in state_dict.items():
-    name = k.replace('model.', '', 1) if k.startswith('model.') else k
-    new_state_dict[name] = v
+new_state_dict = OrderedDict((k.replace('model.', '', 1) if k.startswith('model.') else k, v)
+                               for k, v in state_dict.items())
 
 # Load ke model
 model.load_state_dict(new_state_dict)
@@ -91,7 +87,6 @@ def index():
             file.save(filepath)
             prediction = predict_image(filepath)
 
-            # Simpan ke database
             with sqlite3.connect('cassava.db') as conn:
                 c = conn.cursor()
                 c.execute("INSERT INTO predictions (filename, prediction) VALUES (?, ?)",
@@ -107,10 +102,11 @@ def index():
 def history():
     with sqlite3.connect('cassava.db') as conn:
         c = conn.cursor()
-        c.execute("SELECT * FROM predictions ORDER BY id DESC")
+        c.execute("SELECT id, filename, prediction FROM predictions ORDER BY id DESC")
         data = c.fetchall()
     return render_template('history.html', data=data)
 
+# --- Upload Kamera ---
 @app.route('/upload_camera', methods=['POST'])
 def upload_camera():
     data_url = request.form['camera_image']
@@ -118,12 +114,10 @@ def upload_camera():
     image_data = base64.b64decode(encoded)
     image = Image.open(BytesIO(image_data)).convert("RGB")
 
-    # Simpan file dari kamera
     filename = 'camera_capture.png'
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     image.save(filepath)
 
-    # Prediksi dan simpan ke DB
     prediction = predict_image(filepath)
     with sqlite3.connect('cassava.db') as conn:
         c = conn.cursor()
@@ -133,19 +127,38 @@ def upload_camera():
 
     return render_template('result.html', prediction=prediction, image_url=filepath)
 
+# --- Tampilkan Hasil ---
 @app.route('/result/<filename>')
 def show_result(filename):
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-
     if not os.path.exists(filepath):
         return "File tidak ditemukan", 404
-
     prediction = predict_image(filepath)
     image_url = url_for('static', filename='uploads/' + filename)
-
     return render_template('result.html', prediction=prediction, image_url=image_url)
 
-
+# --- Hapus Riwayat ---
+@app.route('/delete_history', methods=['POST'])
+def delete_history():
+    record_id = request.form['id']
+    with sqlite3.connect('cassava.db') as conn:
+        c = conn.cursor()
+        c.execute("SELECT filename FROM predictions WHERE id = ?", (record_id,))
+        result = c.fetchone()
+        if result:
+            filename = result[0]
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            c.execute("DELETE FROM predictions WHERE id = ?", (record_id,))
+            conn.commit()
+            # Hapus file hanya jika tidak ada entri lain dengan filename yang sama
+            c.execute("SELECT COUNT(*) FROM predictions WHERE filename = ?", (filename,))
+            count = c.fetchone()[0]
+            if count == 0 and os.path.exists(filepath):
+                os.remove(filepath)
+            flash('Data berhasil dihapus.', 'success')
+        else:
+            flash('Data tidak ditemukan.', 'danger')
+    return redirect(url_for('history'))
 
 # --- Jalankan Aplikasi ---
 if __name__ == '__main__':
