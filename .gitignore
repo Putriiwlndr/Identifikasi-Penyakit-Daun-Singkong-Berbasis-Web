@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pth
+*.h5
+*.ckpt
+*.dll
+*.lib
+*.so
+*.pkl
+*.csv
+*.ipynb_checkpoints/
+.DS_Store
