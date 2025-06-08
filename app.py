@@ -1,5 +1,6 @@
 import base64
 import os
+import re
 import sqlite3
 from collections import OrderedDict
 from io import BytesIO
@@ -11,12 +12,13 @@ from flask import Flask, flash, redirect, render_template, request, url_for
 from PIL import Image
 from torchvision import transforms
 import wikipedia
+from deep_translator import GoogleTranslator
 
-# Mapping prediksi ke istilah Wikipedia yang dikenali
+# --- Mapping Nama Wikipedia ---
 wiki_mapping = {
     'Cassava Bacterial Blight (CBB)': 'Cassava bacterial blight',
     'Cassava Brown Streak Disease (CBSD)': 'Cassava brown streak virus',
-    'Cassava Green Mottle (CGM)': 'Cassava green mottle',
+    'Cassava Green Mottle (CGM)': 'Cassava green mottle virus',
     'Cassava Mosaic Disease (CMD)': 'Cassava mosaic virus',
     'Healthy': 'Cassava'
 }
@@ -30,24 +32,14 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # --- Load Model ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = timm.create_model('tf_efficientnet_b6_ns', pretrained=False, num_classes=5)
-
-# Load checkpoint
 model_path = 'model/tf_efficientnet_b6.ns_jft_in1k_fold_0_best.pth'
 checkpoint = torch.load(model_path, map_location=device)
-
-# Periksa apakah checkpoint berisi state_dict langsung atau dict lengkap
 state_dict = checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint
-
-# Bersihkan nama key jika mengandung 'model.'
 new_state_dict = OrderedDict((k.replace('model.', '', 1) if k.startswith('model.') else k, v)
                                for k, v in state_dict.items())
-
-# Load ke model
 model.load_state_dict(new_state_dict)
 model.to(device)
 model.eval()
-
-print("✅ Model berhasil dimuat dan siap digunakan.")
 
 # --- Kelas Penyakit ---
 class_names = [
@@ -74,17 +66,33 @@ def predict_image(img_path):
         _, predicted = torch.max(outputs, 1)
     return class_names[predicted.item()]
 
-# --- Ringkasan Wikipedia ---
-wikipedia.set_lang("id")
+# --- Ambil Ringkasan dan Pencegahan Wikipedia ---
+wikipedia.set_lang("en")
 
-def get_wikipedia_summary(query):
+def get_wikipedia_summary(prediction):
+    wiki_title = wiki_mapping.get(prediction, prediction)
     try:
-        summary = wikipedia.summary(query, sentences=3, auto_suggest=False)
-    except wikipedia.exceptions.DisambiguationError as e:
-        summary = wikipedia.summary(e.options[0], sentences=3)
-    except Exception:
-        summary = "Informasi tidak tersedia di Wikipedia."
-    return summary
+        page = wikipedia.page(wiki_title, auto_suggest=False)
+        summary = wikipedia.summary(wiki_title, sentences=3, auto_suggest=False)
+
+        # Ekstrak kalimat yang mengandung kata-kata kunci pencegahan
+        content = page.content.lower()
+        prevention_sentences = re.findall(r'([^.]*?(mencegah|pencegahan|pengendalian|menghindari|control)[^.]*\.)', content)
+        if prevention_sentences:
+            prevention = prevention_sentences[0][0].capitalize()
+        else:
+            prevention = "Informasi pencegahan tidak ditemukan."
+
+        # Terjemahkan ke Bahasa Indonesia
+        translated_summary = GoogleTranslator(source='en', target='id').translate(summary)
+        translated_prevention = GoogleTranslator(source='en', target='id').translate(prevention)
+
+    except Exception as e:
+        print("❌ Wikipedia Error:", e)
+        translated_summary = "Informasi tidak tersedia di Wikipedia."
+        translated_prevention = "Informasi pencegahan tidak tersedia."
+
+    return translated_summary, translated_prevention
 
 # --- Inisialisasi DB SQLite ---
 def init_db():
@@ -108,10 +116,7 @@ def index():
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
             file.save(filepath)
             prediction = predict_image(filepath)
-            
-            # Mapping nama prediksi ke istilah Wikipedia
-            wiki_title = wiki_mapping.get(prediction, prediction)
-            wiki_summary = get_wikipedia_summary(wiki_title)
+            wiki_summary, wiki_prevention = get_wikipedia_summary(prediction)
 
             with sqlite3.connect('cassava.db') as conn:
                 c = conn.cursor()
@@ -119,8 +124,8 @@ def index():
                           (file.filename, prediction))
                 conn.commit()
 
-            return render_template('result.html', prediction=prediction, image_url=filepath, wiki_summary=wiki_summary)
-
+            return render_template('result.html', prediction=prediction, image_url=filepath,
+                                   wiki_summary=wiki_summary, wiki_prevention=wiki_prevention)
     return render_template('index.html')
 
 # --- Halaman Riwayat ---
@@ -145,8 +150,7 @@ def upload_camera():
     image.save(filepath)
 
     prediction = predict_image(filepath)
-    wiki_title = wiki_mapping.get(prediction, prediction)
-    wiki_summary = get_wikipedia_summary(wiki_title)
+    wiki_summary, wiki_prevention = get_wikipedia_summary(prediction)
 
     with sqlite3.connect('cassava.db') as conn:
         c = conn.cursor()
@@ -154,7 +158,8 @@ def upload_camera():
                   (filename, prediction))
         conn.commit()
 
-    return render_template('result.html', prediction=prediction, image_url=filepath, wiki_summary=wiki_summary)
+    return render_template('result.html', prediction=prediction, image_url=filepath,
+                           wiki_summary=wiki_summary, wiki_prevention=wiki_prevention)
 
 # --- Tampilkan Hasil ---
 @app.route('/result/<filename>')
@@ -163,10 +168,10 @@ def show_result(filename):
     if not os.path.exists(filepath):
         return "File tidak ditemukan", 404
     prediction = predict_image(filepath)
-    wiki_title = wiki_mapping.get(prediction, prediction)
-    wiki_summary = get_wikipedia_summary(wiki_title)
+    wiki_summary, wiki_prevention = get_wikipedia_summary(prediction)
     image_url = url_for('static', filename='uploads/' + filename)
-    return render_template('result.html', prediction=prediction, image_url=image_url, wiki_summary=wiki_summary)
+    return render_template('result.html', prediction=prediction, image_url=image_url,
+                           wiki_summary=wiki_summary, wiki_prevention=wiki_prevention)
 
 # --- Hapus Riwayat ---
 @app.route('/delete_history', methods=['POST'])
