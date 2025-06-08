@@ -16,6 +16,18 @@
             <div class="card-body text-center">
                 <img src="{{ image_url }}" class="img-fluid rounded mb-4" alt="Gambar Daun">
                 <h4 class="fw-bold text-primary">Hasil: {{ prediction }}</h4>
+
+                {% if wiki_summary %}
+                <div class="alert alert-info mt-4 text-start">
+                    <h5 class="text-info fw-semibold">Penjelasan Wikipedia:</h5>
+                    <p>{{ wiki_summary }}</p>
+                </div>
+                {% else %}
+                <div class="alert alert-warning mt-4 text-start">
+                    <p>Maaf, tidak ditemukan penjelasan dari Wikipedia untuk penyakit ini.</p>
+                </div>
+                {% endif %}
+
                 <div class="mt-4">
                     <a href="{{ url_for('index') }}" class="btn btn-success me-2">Prediksi Lagi</a>
                     <a href="{{ url_for('history') }}" class="btn btn-outline-secondary">Lihat Riwayat</a>

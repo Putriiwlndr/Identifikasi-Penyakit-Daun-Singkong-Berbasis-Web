@@ -10,6 +10,16 @@ import torch.nn as nn
 from flask import Flask, flash, redirect, render_template, request, url_for
 from PIL import Image
 from torchvision import transforms
+import wikipedia
+
+# Mapping prediksi ke istilah Wikipedia yang dikenali
+wiki_mapping = {
+    'Cassava Bacterial Blight (CBB)': 'Cassava bacterial blight',
+    'Cassava Brown Streak Disease (CBSD)': 'Cassava brown streak virus',
+    'Cassava Green Mottle (CGM)': 'Cassava green mottle',
+    'Cassava Mosaic Disease (CMD)': 'Cassava mosaic virus',
+    'Healthy': 'Cassava'
+}
 
 # --- Konfigurasi Flask ---
 app = Flask(__name__)
@@ -64,6 +74,18 @@ def predict_image(img_path):
         _, predicted = torch.max(outputs, 1)
     return class_names[predicted.item()]
 
+# --- Ringkasan Wikipedia ---
+wikipedia.set_lang("id")
+
+def get_wikipedia_summary(query):
+    try:
+        summary = wikipedia.summary(query, sentences=3, auto_suggest=False)
+    except wikipedia.exceptions.DisambiguationError as e:
+        summary = wikipedia.summary(e.options[0], sentences=3)
+    except Exception:
+        summary = "Informasi tidak tersedia di Wikipedia."
+    return summary
+
 # --- Inisialisasi DB SQLite ---
 def init_db():
     with sqlite3.connect('cassava.db') as conn:
@@ -86,6 +108,10 @@ def index():
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
             file.save(filepath)
             prediction = predict_image(filepath)
+            
+            # Mapping nama prediksi ke istilah Wikipedia
+            wiki_title = wiki_mapping.get(prediction, prediction)
+            wiki_summary = get_wikipedia_summary(wiki_title)
 
             with sqlite3.connect('cassava.db') as conn:
                 c = conn.cursor()
@@ -93,7 +119,7 @@ def index():
                           (file.filename, prediction))
                 conn.commit()
 
-            return render_template('result.html', prediction=prediction, image_url=filepath)
+            return render_template('result.html', prediction=prediction, image_url=filepath, wiki_summary=wiki_summary)
 
     return render_template('index.html')
 
@@ -119,13 +145,16 @@ def upload_camera():
     image.save(filepath)
 
     prediction = predict_image(filepath)
+    wiki_title = wiki_mapping.get(prediction, prediction)
+    wiki_summary = get_wikipedia_summary(wiki_title)
+
     with sqlite3.connect('cassava.db') as conn:
         c = conn.cursor()
         c.execute("INSERT INTO predictions (filename, prediction) VALUES (?, ?)",
                   (filename, prediction))
         conn.commit()
 
-    return render_template('result.html', prediction=prediction, image_url=filepath)
+    return render_template('result.html', prediction=prediction, image_url=filepath, wiki_summary=wiki_summary)
 
 # --- Tampilkan Hasil ---
 @app.route('/result/<filename>')
@@ -134,8 +163,10 @@ def show_result(filename):
     if not os.path.exists(filepath):
         return "File tidak ditemukan", 404
     prediction = predict_image(filepath)
+    wiki_title = wiki_mapping.get(prediction, prediction)
+    wiki_summary = get_wikipedia_summary(wiki_title)
     image_url = url_for('static', filename='uploads/' + filename)
-    return render_template('result.html', prediction=prediction, image_url=image_url)
+    return render_template('result.html', prediction=prediction, image_url=image_url, wiki_summary=wiki_summary)
 
 # --- Hapus Riwayat ---
 @app.route('/delete_history', methods=['POST'])
@@ -150,7 +181,6 @@ def delete_history():
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             c.execute("DELETE FROM predictions WHERE id = ?", (record_id,))
             conn.commit()
-            # Hapus file hanya jika tidak ada entri lain dengan filename yang sama
             c.execute("SELECT COUNT(*) FROM predictions WHERE filename = ?", (filename,))
             count = c.fetchone()[0]
             if count == 0 and os.path.exists(filepath):
