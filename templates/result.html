@@ -28,6 +28,23 @@
                 </div>
                 {% endif %}
 
+            <!-- Gejala -->
+            <div class="card mt-4 bg-info bg-opacity-25">
+                <div class="card-body">
+                    <h5 class="card-title text-info fw-bold">Gejala (dari Wikipedia)</h5>
+                    <p class="card-text text-dark">{{ wiki_symptom }}</p>
+                </div>
+            </div>
+
+            <!-- Pencegahan -->
+            <div class="card mt-4 bg-info bg-opacity-25">
+                <div class="card-body">
+                    <h5 class="card-title text-info fw-bold">Pencegahan / Pengendalian</h5>
+                    <p class="card-text text-dark">{{ wiki_prevention }}</p>
+                </div>
+            </div>
+
+
                 <div class="mt-4">
                     <a href="{{ url_for('index') }}" class="btn btn-success me-2">Prediksi Lagi</a>
                     <a href="{{ url_for('history') }}" class="btn btn-outline-secondary">Lihat Riwayat</a>
